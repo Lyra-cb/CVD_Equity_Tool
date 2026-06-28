@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deprivation-Aware CVD Risk Tool</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f5f5f5; 
+           display: flex; justify-content: center; padding: 2rem; }
+    .container { max-width: 680px; width: 100%; }
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
+    .card { background: white; border-radius: 12px; 
+            padding: 1.5rem; margin-bottom: 1rem; 
+            border: 1px solid #e0e0e0; }
+    label { font-size: 0.85rem; color: #444; 
+            display: block; margin-bottom: 0.4rem; }
+    input, select { width: 100%; padding: 0.6rem 0.8rem; 
+                    border: 1px solid #ddd; border-radius: 8px; 
+                    font-size: 0.95rem; margin-bottom: 1rem; }
+    .toggle-row { display: flex; align-items: center; 
+                  gap: 0.75rem; margin-bottom: 1rem; }
+    button { width: 100%; padding: 0.75rem; background: #1a73e8;
+             color: white; border: none; border-radius: 8px; 
+             font-size: 1rem; cursor: pointer; }
+    button:hover { background: #1557b0; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Deprivation-Aware CVD Risk Tool</h1>
+  <p class="subtitle">Equity-aware consultation support for primary care</p>
+
+  <div class="card">
+    <!-- Test patient toggle -->
+    <div class="toggle-row">
+      <input type="checkbox" id="test-mode" style="width:auto;margin:0">
+      <label for="test-mode" style="margin:0">Use test patient</label>
+    </div>
+
+    <!-- Patient name (test mode only) -->
+    <div id="name-row" style="display:none">
+      <label>Test patient name</label>
+      <input type="text" id="patient-name" placeholder="e.g. John Smith">
+    </div>
+
+    <!-- Real postcode OR test IMD selector -->
+    <div id="postcode-row">
+      <label>Patient postcode</label>
+      <input type="text" id="postcode" placeholder="e.g. NE33 1AB">
+    </div>
+    <div id="imd-row" style="display:none">
+      <label>IMD Decile (1 = most deprived)</label>
+      <select id="imd-select">
+        <option value="1">1 — most deprived 10%</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5 — middle</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10 — least deprived 10%</option>
+      </select>
+    </div>
+
+    <!-- Clinical inputs -->
+    <label>Age</label>
+    <input type="number" id="age" placeholder="e.g. 58">
+    <label>Sex</label>
+    <select id="sex">
+      <option value="">Select...</option>
+      <option value="female">Female</option>
+      <option value="male">Male</option>
+    </select>
+    <label>Smoker</label>
+    <select id="smoker">
+      <option value="">Select...</option>
+      <option value="no">No</option>
+      <option value="yes">Yes</option>
+    </select>
+    <label>QRISK3 Score (%)</label>
+    <input type="number" id="qrisk" placeholder="e.g. 18.5" step="0.1">
+
+    <button onclick="generateInterpretation()">Generate interpretation</button>
+  </div>
+
+  <div id="output" style="display:none">
+    <div class="card" id="card-context"></div>
+    <div class="card" id="card-barriers"></div>
+    <div class="card" id="card-prompts"></div>
+  </div>
+</div>
+
+<script>
+// Toggle test patient mode
+document.getElementById('test-mode').addEventListener('change', function() {
+  const test = this.checked;
+  document.getElementById('name-row').style.display = test ? 'block' : 'none';
+  document.getElementById('postcode-row').style.display = test ? 'none' : 'block';
+  document.getElementById('imd-row').style.display = test ? 'block' : 'none';
+});
+
+async function generateInterpretation() {
+  const age = document.getElementById('age').value;
+  const sex = document.getElementById('sex').value;
+  const smoker = document.getElementById('smoker').value;
+  const qrisk = document.getElementById('qrisk').value;
+  const testMode = document.getElementById('test-mode').checked;
+
+  if (!age || !qrisk || !sex || !smoker) {
+    alert('Please enter age and QRISK3 score');
+    return;
+  }
+
+  let imdDecile;
+  if (testMode) {
+    imdDecile = document.getElementById('imd-select').value;
+  } else {
+    const postcode = document.getElementById('postcode').value;
+    if (!postcode) { alert('Please enter a postcode'); return; }
+    imdDecile = await lookupIMD(postcode);
+    if (!imdDecile) return;
+  }
+
+  document.querySelector('button').textContent = 'Generating...';
+  await callClaude(age, sex, smoker, qrisk, imdDecile);
+  document.querySelector('button').textContent = 'Generate interpretation';
+}
+
+async function lookupIMD(postcode) {
+  try {
+    const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode)}`);
+    const data = await res.json();
+    if (data.status !== 200) { alert('Postcode not found'); return null; }
+    const imd = data.result.imd;
+    if (!imd) { alert('IMD data not available for this postcode'); return null; }
+    return imd;
+  } catch(e) {
+    alert('Postcode lookup failed');
+    return null;
+  }
+}
+
+async function callClaude(age, sex, smoker, qrisk, imdDecile) {
+  const prompt = `You are a clinical decision support tool helping UK GPs understand cardiovascular risk in the context of social deprivation.
+
+Patient details:
+- Age: ${age}
+- Sex: ${sex}
+- Smoker: ${smoker}
+- QRISK3 score: ${qrisk}%
+- IMD Decile: ${imdDecile} (where 1 = most deprived, 10 = least deprived)
+
+Generate a structured clinical interpretation with THREE sections:
+
+1. RISK IN CONTEXT: 2-3 bullet points explaining what this QRISK3 score means given the patient's deprivation level. Reference the Inverse Care Law where relevant.
+
+2. BARRIERS TO PATHWAY: 3-4 bullet points listing likely barriers this patient faces to standard NICE CVD prevention pathways (statins, lifestyle advice, smoking cessation).
+
+3. CONSULTATION PROMPTS: 3-4 bullet points of equity-aware questions or actions for the GP to consider in this consultation.
+
+Keep each bullet point concise — one sentence. Use plain clinical English. This is educational support, not a diagnostic tool.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await res.json();
+    const text = data.content[0].text;
+    displayResults(text, imdDecile);
+  } catch(e) {
+    alert('API call failed — check console for details');
+    console.error(e);
+  }
+}
+
+function displayResults(text, imdDecile) {
+  // Parse the three sections
+  const sections = text.split(/\d\.\s+[A-Z\s]+:/);
+  const titles = ['Risk in context', 'Barriers to pathway', 'Consultation prompts'];
+  const cards = ['card-context', 'card-barriers', 'card-prompts'];
+  const colors = ['#c0392b', '#e67e22', '#27ae60'];
+
+  document.getElementById('output').style.display = 'block';
+
+  // IMD bar
+  document.getElementById('card-context').innerHTML = `
+    <div style="margin-bottom:1rem">
+      <div style="font-size:0.8rem;color:#666;margin-bottom:0.4rem">
+        IMD Decile ${imdDecile} — ${imdDecile <= 3 ? 'high deprivation' : imdDecile <= 7 ? 'moderate deprivation' : 'low deprivation'}
+      </div>
+      <div style="background:#eee;border-radius:4px;height:8px">
+        <div style="background:${colors[0]};width:${(11 - imdDecile) * 10}%;height:8px;border-radius:4px"></div>
+      </div>
+    </div>`;
+
+  // Parse and display sections
+  const parts = text.split(/\n\n/).filter(p => p.trim());
+  let sectionIndex = 0;
+
+  cards.forEach((cardId, i) => {
+    const card = document.getElementById(cardId);
+    const existing = card.innerHTML;
+    card.innerHTML = existing + `<h3 style="color:${colors[i]};margin-bottom:0.75rem;font-size:1rem">${titles[i]}</h3>`;
+
+    // Find relevant section in text
+    const sectionMatch = text.match(new RegExp(`${i+1}\\.[^:]+:([\\s\\S]*?)(?=${i+2}\\.|$)`));
+    if (sectionMatch) {
+      const bullets = sectionMatch[1].trim().split('\n').filter(b => b.trim());
+      const ul = document.createElement('ul');
+      ul.style.paddingLeft = '1.2rem';
+      ul.style.lineHeight = '1.8';
+      ul.style.fontSize = '0.9rem';
+      bullets.forEach(b => {
+        const li = document.createElement('li');
+        li.textContent = b.replace(/^[-•]\s*/, '').trim();
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+    }
+  });
+}
+</script>
+</body>
+</html>
