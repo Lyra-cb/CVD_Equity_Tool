@@ -1,20 +1,16 @@
-# Deprivation-Aware CVD Risk Interpretation Tool
+# React + Vite
 
-A clinician-facing web app that adds health equity context 
-to QRISK3 cardiovascular risk scores.
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## What it does
-Takes a patient's QRISK3 score + postcode (or IMD decile 
-for test patients) and generates:
-- Risk interpretation in deprivation context
-- Barriers to standard NICE pathways
-- Equity-aware consultation prompts
-- Teaching notes on the Inverse Care Law
+Currently, two official plugins are available:
 
-## Built with
-- React frontend
-- Anthropic API (Claude)
-- postcodes.io API for postcode → IMD lookup
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Status
-🔜 In development — Summer 2026
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the Oxlint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
